@@ -93,10 +93,10 @@ func ByteCountIEC(b int64) string {
 
 func init() {
 	flag.StringVar(&flag_folder_path, "f", ".", "Folder path.")
-	flag.Parse()
 }
 
 func main() {
+	flag.Parse()
 	size, err := Parallel(flag_folder_path, te)
 	if err != nil {
 		panic(err)

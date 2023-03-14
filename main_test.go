@@ -11,9 +11,9 @@ func TestParallel(t *testing.T) {
 	is := assert.New(t)
 	tree := treeprint.New()
 
-	size, err := Parallel("/Users/dapeng/Desktop/code/Git", tree)
+	size, err := Parallel(".", tree)
 
 	is.Nil(err)
 
-	is.Equal(size, int64(2636490533))
+	is.Equal(size, int64(40748))
 }
