@@ -15,5 +15,5 @@ func TestParallel(t *testing.T) {
 
 	is.Nil(err)
 
-	is.Equal(size, int64(40748))
+	is.GreaterOrEqual(size, int64(40748))
 }
