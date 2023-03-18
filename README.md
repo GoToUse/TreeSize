@@ -2,7 +2,13 @@
 
 Print folders in tree format and display file's size.
 
-# Examples
+## Install
+
+```bash
+go install github.com/GoToUse/TreeSize@latest
+```
+
+## Examples
 
 ```bash
 ╰─± go run main.go -f /Users/dapeng/Desktop/code/python3/learn 
