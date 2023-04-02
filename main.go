@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -16,10 +17,43 @@ import (
 const unit = 1024
 
 // command line arguments
-var flag_folder_path string
+var (
+	flag_folder_path string
+	exclude_dirs     excludeDirs
+	humanRead        bool
+)
 
 // global variable
-var te = treeprint.New()
+var (
+	te      = treeprint.New()
+	folders int32
+	files   int32
+)
+
+type excludeDirs []string
+
+func (e *excludeDirs) String() string {
+	return fmt.Sprint(*e)
+}
+
+func (e *excludeDirs) Set(value string) error {
+	*e = append(*e, value)
+	return nil
+}
+
+func convertToAbsPath(root string) (path string, err error) {
+	path, err = filepath.Abs(root)
+	return path, err
+}
+
+func folderInExcludeArrays(name string) bool {
+	for _, dir := range exclude_dirs {
+		if name == dir {
+			return true
+		}
+	}
+	return false
+}
 
 func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tree treeprint.Tree) {
 	defer wg.Done()
@@ -29,6 +63,7 @@ func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tr
 		if err != nil {
 			panic(err)
 		}
+		atomic.AddInt32(&folders, 1)
 		atomic.AddInt64(total, size)
 		return
 	}
@@ -39,8 +74,14 @@ func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tr
 	}
 
 	size := info.Size()
+	atomic.AddInt32(&files, 1)
 	atomic.AddInt64(total, size)
-	tree.AddNode(fmt.Sprintf("%s (%s)", path.Base(entry.Name()), ByteCountIEC(size)))
+
+	if humanRead {
+		tree.AddNode(fmt.Sprintf("%s (%s)", entry.Name(), ByteCountIEC(size)))
+	} else {
+		tree.AddNode(entry.Name())
+	}
 }
 
 // Parallel execution, fast enough
@@ -48,7 +89,13 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 	var wg sync.WaitGroup
 	entrys, err := os.ReadDir(folder)
 	// 不记录子目录的大小
-	branch := tree.AddBranch(path.Base(folder))
+	var branch treeprint.Tree
+	if folder == flag_folder_path {
+		branch = tree
+	} else {
+		baseFolder := path.Base(folder)
+		branch = tree.AddBranch(baseFolder)
+	}
 
 	// catch panic
 	defer func() {
@@ -67,10 +114,14 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 		return 0, nil
 	}
 
-	wg.Add(entrysLen)
+	// wg.Add(entrysLen)
 
 	for i := 0; i < entrysLen; i++ {
-		go calc(entrys[i], &wg, folder, &total, branch)
+		subFolder := entrys[i]
+		if !folderInExcludeArrays(subFolder.Name()) {
+			wg.Add(1)
+			go calc(subFolder, &wg, folder, &total, branch)
+		}
 	}
 
 	wg.Wait()
@@ -93,6 +144,8 @@ func ByteCountIEC(b int64) string {
 
 func init() {
 	flag.StringVar(&flag_folder_path, "f", ".", "Folder path.")
+	flag.Var(&exclude_dirs, "e", "Exclude directories.")
+	flag.BoolVar(&humanRead, "h", false, "Print the size in a more human readable way.")
 }
 
 func main() {
@@ -102,7 +155,12 @@ func main() {
 		panic(err)
 	}
 
-	for _, d := range []string{fmt.Sprintf("Total size: %s", ByteCountIEC(size)), "Output in tree format:", te.String()} {
+	rootPath, err := convertToAbsPath(flag_folder_path)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, d := range []string{rootPath, te.String(), fmt.Sprintf("\033[1mSummary:\033[0m Total folders: \033[31m%d\033[0m Total files: \033[32m%d\033[0m Total size: \033[34m%s\033[0m", folders, files, ByteCountIEC(size))} {
 		fmt.Println(d)
 	}
 }
