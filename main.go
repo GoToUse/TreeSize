@@ -55,11 +55,22 @@ func folderInExcludeArrays(name string) bool {
 	return false
 }
 
+func catchError() {
+	err := recover()
+
+	if err != nil {
+		e := fmt.Errorf("error: %v", err)
+		fmt.Println(e.Error())
+		return
+	}
+}
+
 func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tree treeprint.Tree) {
 	defer wg.Done()
 
 	if entry.IsDir() {
 		size, err := Parallel(path.Join(folder, entry.Name()), tree)
+		defer catchError()
 		if err != nil {
 			panic(err)
 		}
@@ -69,6 +80,7 @@ func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tr
 	}
 
 	info, err := entry.Info()
+	defer catchError()
 	if err != nil {
 		panic(err)
 	}
@@ -96,13 +108,6 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 		baseFolder := path.Base(folder)
 		branch = tree.AddBranch(baseFolder)
 	}
-
-	// catch panic
-	defer func() {
-		if err := recover(); err != nil {
-			e = fmt.Errorf("%v", err)
-		}
-	}()
 
 	if err != nil {
 		return 0, err
@@ -151,11 +156,13 @@ func init() {
 func main() {
 	flag.Parse()
 	size, err := Parallel(flag_folder_path, te)
+	defer catchError()
 	if err != nil {
 		panic(err)
 	}
 
 	rootPath, err := convertToAbsPath(flag_folder_path)
+	defer catchError()
 	if err != nil {
 		panic(err)
 	}
