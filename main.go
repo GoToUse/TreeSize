@@ -1,12 +1,15 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -18,9 +21,9 @@ const unit = 1024
 
 // command line arguments
 var (
-	flag_folder_path string
-	exclude_dirs     excludeDirs
-	humanRead        bool
+	flagFolderPath  string
+	excludeDirArray excludeDirs
+	humanRead       bool
 )
 
 // global variable
@@ -37,8 +40,39 @@ func (e *excludeDirs) String() string {
 }
 
 func (e *excludeDirs) Set(value string) error {
-	*e = append(*e, value)
-	return nil
+	commaRegex := regexp.MustCompile(`,`)
+	commaMatched := commaRegex.MatchString(value)
+
+	spaceRegex := regexp.MustCompile(`\s`)
+	spaceMatched := spaceRegex.MatchString(value)
+
+	semicolonRegex := regexp.MustCompile(`;`)
+	semicolonMatched := semicolonRegex.MatchString(value)
+
+	commaAndSpace := commaMatched && spaceMatched
+	commaAndSemicolon := commaMatched && semicolonMatched
+	spaceAndSemicolon := spaceMatched && semicolonMatched
+
+	switch {
+	case commaAndSpace || commaAndSemicolon || spaceAndSemicolon:
+		return errors.New("spaces and commas and semicolons cannot be included at the same time, " +
+			"there is only one type: `spaces` or `commas` or `semicolons`")
+	case commaMatched:
+		commas := strings.Split(value, ",")
+		*e = commas
+		return nil
+	case spaceMatched:
+		spaces := strings.Split(value, " ")
+		*e = spaces
+		return nil
+	case semicolonMatched:
+		semicolons := strings.Split(value, ";")
+		*e = semicolons
+		return nil
+	default:
+		*e = append(*e, value)
+		return nil
+	}
 }
 
 func convertToAbsPath(root string) (path string, err error) {
@@ -47,7 +81,7 @@ func convertToAbsPath(root string) (path string, err error) {
 }
 
 func folderInExcludeArrays(name string) bool {
-	for _, dir := range exclude_dirs {
+	for _, dir := range excludeDirArray {
 		if name == dir {
 			return true
 		}
@@ -99,10 +133,10 @@ func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tr
 // Parallel execution, fast enough
 func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 	var wg sync.WaitGroup
-	entrys, err := os.ReadDir(folder)
+	entryS, err := os.ReadDir(folder)
 	// 不记录子目录的大小
 	var branch treeprint.Tree
-	if folder == flag_folder_path {
+	if folder == flagFolderPath {
 		branch = tree
 	} else {
 		baseFolder := path.Base(folder)
@@ -113,16 +147,16 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 		return 0, err
 	}
 
-	entrysLen := len(entrys)
+	entrySLen := len(entryS)
 
-	if entrysLen == 0 {
+	if entrySLen == 0 {
 		return 0, nil
 	}
 
-	// wg.Add(entrysLen)
+	// wg.Add(entrySLen)
 
-	for i := 0; i < entrysLen; i++ {
-		subFolder := entrys[i]
+	for i := 0; i < entrySLen; i++ {
+		subFolder := entryS[i]
 		if !folderInExcludeArrays(subFolder.Name()) {
 			wg.Add(1)
 			go calc(subFolder, &wg, folder, &total, branch)
@@ -133,7 +167,7 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 	return total, nil
 }
 
-// ByteCountIEC, 以1024作为基数, 将字节转为对应的KB等单位
+// ByteCountIEC 以1024作为基数, 将字节转为对应的KB等单位
 func ByteCountIEC(b int64) string {
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
@@ -148,20 +182,20 @@ func ByteCountIEC(b int64) string {
 }
 
 func init() {
-	flag.StringVar(&flag_folder_path, "f", ".", "Folder path.")
-	flag.Var(&exclude_dirs, "e", "Exclude directories.")
+	flag.StringVar(&flagFolderPath, "f", ".", "Folder path.")
+	flag.Var(&excludeDirArray, "e", "Exclude directories.")
 	flag.BoolVar(&humanRead, "h", false, "Print the size in a more human readable way.")
 }
 
 func main() {
 	flag.Parse()
-	size, err := Parallel(flag_folder_path, te)
+	size, err := Parallel(flagFolderPath, te)
 	defer catchError()
 	if err != nil {
 		panic(err)
 	}
 
-	rootPath, err := convertToAbsPath(flag_folder_path)
+	rootPath, err := convertToAbsPath(flagFolderPath)
 	defer catchError()
 	if err != nil {
 		panic(err)
