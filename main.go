@@ -21,14 +21,19 @@ const unit = 1024
 
 // command line arguments
 var (
-	flagFolderPath  string
+	// 目标地址
+	folderPath string
+	// 排除在外的地址数组
 	excludeDirArray excludeDirs
-	humanRead       bool
+	// 是否输出size
+	humanRead bool
+	// 是否部分匹配
+	partialMatch bool
 )
 
 // global variable
 var (
-	te      = treeprint.New()
+	tp      = treeprint.New()
 	folders int32
 	files   int32
 )
@@ -80,10 +85,16 @@ func convertToAbsPath(root string) (path string, err error) {
 	return path, err
 }
 
-func folderInExcludeArrays(name string) bool {
-	for _, dir := range excludeDirArray {
-		if name == dir {
-			return true
+func folderInExcludeArrays(subDir os.DirEntry) bool {
+	if subDir.IsDir() {
+		name := subDir.Name()
+		for _, dir := range excludeDirArray {
+			// This will exclude all `dir`s whose names are included in `name`.
+			if partialMatch && strings.Contains(name, dir) {
+				return true
+			} else if name == dir {
+				return true
+			}
 		}
 	}
 	return false
@@ -136,7 +147,7 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 	entryS, err := os.ReadDir(folder)
 	// 不记录子目录的大小
 	var branch treeprint.Tree
-	if folder == flagFolderPath {
+	if folder == folderPath {
 		branch = tree
 	} else {
 		baseFolder := path.Base(folder)
@@ -157,7 +168,7 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 
 	for i := 0; i < entrySLen; i++ {
 		subFolder := entryS[i]
-		if !folderInExcludeArrays(subFolder.Name()) {
+		if !folderInExcludeArrays(subFolder) {
 			wg.Add(1)
 			go calc(subFolder, &wg, folder, &total, branch)
 		}
@@ -182,26 +193,27 @@ func ByteCountIEC(b int64) string {
 }
 
 func init() {
-	flag.StringVar(&flagFolderPath, "f", ".", "Folder path.")
+	flag.StringVar(&folderPath, "f", ".", "Folder path.")
 	flag.Var(&excludeDirArray, "e", "Exclude directories.")
 	flag.BoolVar(&humanRead, "h", false, "Print the size in a more human readable way.")
+	flag.BoolVar(&partialMatch, "p", false, "Support partial match.")
 }
 
 func main() {
 	flag.Parse()
-	size, err := Parallel(flagFolderPath, te)
+	size, err := Parallel(folderPath, tp)
 	defer catchError()
 	if err != nil {
 		panic(err)
 	}
 
-	rootPath, err := convertToAbsPath(flagFolderPath)
+	rootPath, err := convertToAbsPath(folderPath)
 	defer catchError()
 	if err != nil {
 		panic(err)
 	}
 
-	for _, d := range []string{rootPath, te.String(), fmt.Sprintf("\033[1mSummary:\033[0m Total folders: \033[31m%d\033[0m Total files: \033[32m%d\033[0m Total size: \033[34m%s\033[0m", folders, files, ByteCountIEC(size))} {
+	for _, d := range []string{rootPath, tp.String(), fmt.Sprintf("\033[1mSummary:\033[0m Total folders: \033[31m%d\033[0m Total files: \033[32m%d\033[0m Total size: \033[34m%s\033[0m", folders, files, ByteCountIEC(size))} {
 		fmt.Println(d)
 	}
 }
