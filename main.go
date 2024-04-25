@@ -44,6 +44,21 @@ func (e *excludeDirs) String() string {
 	return fmt.Sprint(*e)
 }
 
+// multiExists check if there are more than `multi` bool values in the evalArray.
+func multiExists(evalArray []bool, multi int) bool {
+	var n int
+	for _, _b := range evalArray {
+		if _b {
+			n++
+		}
+	}
+
+	if n > multi {
+		return true
+	}
+	return false
+}
+
 func (e *excludeDirs) Set(value string) error {
 	commaRegex := regexp.MustCompile(`,`)
 	commaMatched := commaRegex.MatchString(value)
@@ -54,12 +69,8 @@ func (e *excludeDirs) Set(value string) error {
 	semicolonRegex := regexp.MustCompile(`;`)
 	semicolonMatched := semicolonRegex.MatchString(value)
 
-	commaAndSpace := commaMatched && spaceMatched
-	commaAndSemicolon := commaMatched && semicolonMatched
-	spaceAndSemicolon := spaceMatched && semicolonMatched
-
 	switch {
-	case commaAndSpace || commaAndSemicolon || spaceAndSemicolon:
+	case multiExists([]bool{commaMatched, spaceMatched, semicolonMatched}, 1):
 		return errors.New("spaces and commas and semicolons cannot be included at the same time, " +
 			"there is only one type: `spaces` or `commas` or `semicolons`")
 	case commaMatched:
@@ -80,6 +91,7 @@ func (e *excludeDirs) Set(value string) error {
 	}
 }
 
+// convertToAbsPath convert a passed in path to an absolute path.
 func convertToAbsPath(root string) (path string, err error) {
 	path, err = filepath.Abs(root)
 	return path, err
@@ -145,7 +157,7 @@ func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tr
 func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 	var wg sync.WaitGroup
 	entryS, err := os.ReadDir(folder)
-	// 不记录子目录的大小
+	// Do not record the size of directory.
 	var branch treeprint.Tree
 	if folder == folderPath {
 		branch = tree
@@ -178,7 +190,7 @@ func Parallel(folder string, tree treeprint.Tree) (total int64, e error) {
 	return total, nil
 }
 
-// ByteCountIEC 以1024作为基数, 将字节转为对应的KB等单位
+// ByteCountIEC is based on 1024, converts the bytes to corresponding units such as KB.
 func ByteCountIEC(b int64) string {
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
