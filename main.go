@@ -29,6 +29,9 @@ var (
 	humanRead bool
 	// 是否部分匹配
 	partialMatch bool
+
+	// add lock
+	lock sync.Mutex
 )
 
 // global variable
@@ -146,11 +149,13 @@ func calc(entry fs.DirEntry, wg *sync.WaitGroup, folder string, total *int64, tr
 	atomic.AddInt32(&files, 1)
 	atomic.AddInt64(total, size)
 
+	lock.Lock()
 	if humanRead {
 		tree.AddNode(fmt.Sprintf("%s (%s)", entry.Name(), ByteCountIEC(size)))
 	} else {
 		tree.AddNode(entry.Name())
 	}
+	lock.Unlock()
 }
 
 // Parallel execution, fast enough
